@@ -11,7 +11,7 @@ interface ConversionOptionsProps {
 
 export const ConversionOptions = ({ mode, onModeChange }: ConversionOptionsProps) => {
   return (
-    <Card className="p-6 shadow-soft border-border">
+    <Card className="p-6 shadow-soft border-border bg-card">
       <h2 className="text-2xl font-bold mb-4">Conversion Mode</h2>
       <RadioGroup value={mode} onValueChange={(value) => onModeChange(value as ConversionMode)}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -36,8 +36,8 @@ export const ConversionOptions = ({ mode, onModeChange }: ConversionOptionsProps
                 </Label>
               </div>
               <p className="text-sm text-muted-foreground">
-                Classic Potrace conversion. Converts your image to a clean, two-color SVG
-                (black and white). Perfect for logos, icons, and simple graphics.
+                Classic 2-color tracing. Ultra-fast conversion for logos, icons, and simple graphics.
+                Perfect for crisp, clean SVG output.
               </p>
             </div>
           </label>
@@ -63,8 +63,8 @@ export const ConversionOptions = ({ mode, onModeChange }: ConversionOptionsProps
                 </Label>
               </div>
               <p className="text-sm text-muted-foreground">
-                Advanced conversion with 4 grayscale levels. Creates a layered SVG with more
-                detail and depth. Ideal for photos and complex images.
+                Advanced 4-color layered SVG. Preserves more detail and depth for photos and
+                complex images. Slightly slower but richer output.
               </p>
             </div>
           </label>

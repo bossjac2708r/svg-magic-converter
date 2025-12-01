@@ -14,7 +14,7 @@ export const UploadZone = ({ onFilesAdded, maxFiles }: UploadZoneProps) => {
   const validateFiles = (files: File[]): File[] => {
     const validFiles = files.filter((file) => {
       const isValidType = file.type === "image/png" || file.type === "image/jpeg";
-      const isValidSize = file.size <= 20 * 1024 * 1024; // 20MB
+      const isValidSize = file.size <= 50 * 1024 * 1024; // 50MB
 
       if (!isValidType) {
         toast({
@@ -28,7 +28,7 @@ export const UploadZone = ({ onFilesAdded, maxFiles }: UploadZoneProps) => {
       if (!isValidSize) {
         toast({
           title: "File too large",
-          description: `${file.name} exceeds 20MB limit`,
+          description: `${file.name} exceeds 50MB limit`,
           variant: "destructive",
         });
         return false;
@@ -139,7 +139,7 @@ export const UploadZone = ({ onFilesAdded, maxFiles }: UploadZoneProps) => {
             Drag & drop or click to browse
           </p>
           <p className="text-sm text-muted-foreground">
-            PNG or JPG • Up to {maxFiles} files • Max 20MB each
+            PNG or JPG • Up to {maxFiles} files • Max 50MB each
           </p>
         </div>
       </div>
