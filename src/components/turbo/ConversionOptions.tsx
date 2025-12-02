@@ -1,18 +1,21 @@
-import { Circle, Layers } from "lucide-react";
+import { Circle, Layers, Sliders } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { ConversionMode } from "@/pages/Index";
+import { Slider } from "@/components/ui/slider";
+import type { ConversionMode, ConversionSettings } from "@/pages/Index";
 
 interface ConversionOptionsProps {
   mode: ConversionMode;
   onModeChange: (mode: ConversionMode) => void;
+  settings: ConversionSettings;
+  onSettingsChange: (settings: ConversionSettings) => void;
 }
 
-export const ConversionOptions = ({ mode, onModeChange }: ConversionOptionsProps) => {
+export const ConversionOptions = ({ mode, onModeChange, settings, onSettingsChange }: ConversionOptionsProps) => {
   return (
     <Card className="p-6 shadow-soft border-border bg-card">
-      <h2 className="text-2xl font-bold mb-4">Conversion Mode</h2>
+      <h2 className="text-2xl font-bold mb-6">Conversion Settings</h2>
       <RadioGroup value={mode} onValueChange={(value) => onModeChange(value as ConversionMode)}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label
@@ -70,6 +73,54 @@ export const ConversionOptions = ({ mode, onModeChange }: ConversionOptionsProps
           </label>
         </div>
       </RadioGroup>
+
+      {/* Advanced Settings */}
+      <div className="mt-6 pt-6 border-t border-border">
+        <div className="flex items-center gap-2 mb-4">
+          <Sliders className="h-5 w-5 text-primary" />
+          <h3 className="text-lg font-semibold">Advanced Settings</h3>
+        </div>
+        
+        <div className="space-y-6">
+          {/* Smoothness Slider */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-medium">Smoothness</Label>
+              <span className="text-sm text-muted-foreground">{settings.smoothness.toFixed(1)}</span>
+            </div>
+            <Slider
+              value={[settings.smoothness]}
+              onValueChange={([value]) => onSettingsChange({ ...settings, smoothness: value })}
+              min={0.1}
+              max={2}
+              step={0.1}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Higher values create smoother curves with fewer points
+            </p>
+          </div>
+
+          {/* Noise Reduction Slider */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-medium">Noise Reduction</Label>
+              <span className="text-sm text-muted-foreground">{settings.noiseReduction.toFixed(1)}</span>
+            </div>
+            <Slider
+              value={[settings.noiseReduction]}
+              onValueChange={([value]) => onSettingsChange({ ...settings, noiseReduction: value })}
+              min={0}
+              max={3}
+              step={0.5}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Reduces small artifacts and improves trace quality
+            </p>
+          </div>
+        </div>
+      </div>
     </Card>
   );
 };

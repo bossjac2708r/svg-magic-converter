@@ -3,7 +3,7 @@ import { Upload, FileImage } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface UploadZoneProps {
-  onFilesAdded: (files: File[]) => void;
+  onFilesAdded: (files: File[], folderPaths?: string[]) => void;
   maxFiles: number;
 }
 
@@ -50,14 +50,30 @@ export const UploadZone = ({ onFilesAdded, maxFiles }: UploadZoneProps) => {
   };
 
   const handleFiles = useCallback(
-    (files: FileList | null) => {
+    (files: FileList | null, items?: DataTransferItemList) => {
       if (!files || files.length === 0) return;
 
       const fileArray = Array.from(files);
       const validFiles = validateFiles(fileArray);
 
+      // Extract folder paths if available
+      let folderPaths: string[] | undefined;
+      if (items) {
+        folderPaths = [];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === "file") {
+            const entry = item.webkitGetAsEntry?.();
+            if (entry) {
+              const path = entry.fullPath?.split("/").slice(0, -1).join("/") || "";
+              folderPaths.push(path.startsWith("/") ? path.slice(1) : path);
+            }
+          }
+        }
+      }
+
       if (validFiles.length > 0) {
-        onFilesAdded(validFiles);
+        onFilesAdded(validFiles, folderPaths);
       }
     },
     [onFilesAdded, maxFiles]
@@ -67,7 +83,7 @@ export const UploadZone = ({ onFilesAdded, maxFiles }: UploadZoneProps) => {
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       setIsDragging(false);
-      handleFiles(e.dataTransfer.files);
+      handleFiles(e.dataTransfer.files, e.dataTransfer.items);
     },
     [handleFiles]
   );
@@ -83,7 +99,7 @@ export const UploadZone = ({ onFilesAdded, maxFiles }: UploadZoneProps) => {
   }, []);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleFiles(e.target.files);
+    handleFiles(e.target.files, undefined);
     e.target.value = ""; // Reset input
   };
 
@@ -110,6 +126,7 @@ export const UploadZone = ({ onFilesAdded, maxFiles }: UploadZoneProps) => {
         onChange={handleFileInput}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         aria-label="Upload files"
+        {...({ webkitdirectory: "", directory: "" } as any)}
       />
 
       <div className="flex flex-col items-center gap-4">

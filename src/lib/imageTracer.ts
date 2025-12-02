@@ -1,8 +1,14 @@
 // @ts-ignore - imagetracerjs doesn't have TypeScript definitions
 import ImageTracer from "imagetracerjs";
 
+export interface ConversionSettings {
+  smoothness: number;
+  noiseReduction: number;
+}
+
 export interface TracingOptions {
   mode: "blackwhite" | "posterize";
+  settings: ConversionSettings;
 }
 
 export const traceImage = async (
@@ -11,27 +17,29 @@ export const traceImage = async (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
+      const { smoothness, noiseReduction } = options.settings;
+      
       const tracingParams = options.mode === "blackwhite" 
         ? {
-            ltres: 0.5,
-            qtres: 1,
-            pathomit: 8,
+            ltres: 0.5 * smoothness,
+            qtres: smoothness,
+            pathomit: 8 * smoothness,
             colorsampling: 0,
             numberofcolors: 2,
             mincolorratio: 0,
             colorquantcycles: 3,
-            blurradius: 0,
+            blurradius: Math.floor(noiseReduction),
             blurdelta: 20,
           }
         : {
-            ltres: 1,
-            qtres: 1,
-            pathomit: 8,
+            ltres: 1 * smoothness,
+            qtres: smoothness,
+            pathomit: 8 * smoothness,
             colorsampling: 0,
             numberofcolors: 4,
             mincolorratio: 0,
             colorquantcycles: 3,
-            blurradius: 1,
+            blurradius: 1 + Math.floor(noiseReduction),
             blurdelta: 20,
           };
 

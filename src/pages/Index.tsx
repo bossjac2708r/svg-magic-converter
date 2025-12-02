@@ -15,6 +15,11 @@ import JSZip from "jszip";
 export type ConversionMode = "blackwhite" | "posterize";
 export type FileStatus = "queued" | "processing" | "ready" | "error";
 
+export interface ConversionSettings {
+  smoothness: number;
+  noiseReduction: number;
+}
+
 export interface UploadedFile {
   id: string;
   file: File;
@@ -24,22 +29,47 @@ export interface UploadedFile {
   svgBlob?: Blob;
   mode: ConversionMode;
   error?: string;
+  path?: string; // Original folder path
+  conversionTime?: number; // Time taken to convert in ms
+}
+
+export interface ConversionStats {
+  totalFiles: number;
+  converted: number;
+  failed: number;
+  startTime: number | null;
+  endTime: number | null;
+  averageSpeed: number; // Images per second
 }
 
 const Index = () => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [mode, setMode] = useState<ConversionMode>("blackwhite");
+  const [settings, setSettings] = useState<ConversionSettings>({
+    smoothness: 1,
+    noiseReduction: 1,
+  });
   const [isConverting, setIsConverting] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [stats, setStats] = useState<ConversionStats>({
+    totalFiles: 0,
+    converted: 0,
+    failed: 0,
+    startTime: null,
+    endTime: null,
+    averageSpeed: 0,
+  });
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
 
-  const handleFilesAdded = (newFiles: File[]) => {
-    const uploadedFiles: UploadedFile[] = newFiles.map((file) => ({
+  const handleFilesAdded = (newFiles: File[], folderPaths?: string[]) => {
+    const uploadedFiles: UploadedFile[] = newFiles.map((file, index) => ({
       id: crypto.randomUUID(),
       file,
       status: "queued" as FileStatus,
       originalUrl: URL.createObjectURL(file),
       mode,
+      path: folderPaths?.[index],
     }));
 
     setFiles((prev) => [...prev, ...uploadedFiles]);
@@ -50,6 +80,7 @@ const Index = () => {
   };
 
   const convertFile = async (uploadedFile: UploadedFile) => {
+    const startTime = Date.now();
     try {
       // Update status to processing
       setFiles((prev) =>
@@ -72,6 +103,7 @@ const Index = () => {
         worker.onmessage = (e) => {
           if (e.data.type === "success") {
             const svgBlob = new Blob([e.data.svgString], { type: "image/svg+xml" });
+            const conversionTime = Date.now() - startTime;
             
             setFiles((prev) =>
               prev.map((f) =>
@@ -81,6 +113,7 @@ const Index = () => {
                       status: "ready" as FileStatus,
                       svgString: e.data.svgString,
                       svgBlob,
+                      conversionTime,
                     }
                   : f
               )
@@ -120,6 +153,7 @@ const Index = () => {
           type: "convert",
           imageData,
           mode: uploadedFile.mode,
+          settings,
           fileId: uploadedFile.id,
           fileName: uploadedFile.file.name,
         });
@@ -152,20 +186,60 @@ const Index = () => {
     }
 
     setIsConverting(true);
+    const startTime = Date.now();
+    
+    // Initialize stats
+    const queuedFiles = files.filter((f) => f.status === "queued");
+    setStats({
+      totalFiles: queuedFiles.length,
+      converted: 0,
+      failed: 0,
+      startTime,
+      endTime: null,
+      averageSpeed: 0,
+    });
 
     try {
-      // Process files in parallel batches of 4
-      const batchSize = 4;
-      const queuedFiles = files.filter((f) => f.status === "queued");
+      // Process files in parallel batches of 6
+      const batchSize = 6;
       
       for (let i = 0; i < queuedFiles.length; i += batchSize) {
         const batch = queuedFiles.slice(i, i + batchSize);
-        await Promise.allSettled(batch.map((file) => convertFile(file)));
+        const results = await Promise.allSettled(batch.map((file) => convertFile(file)));
+        
+        // Update stats after each batch
+        const converted = files.filter((f) => f.status === "ready").length;
+        const failed = files.filter((f) => f.status === "error").length;
+        const elapsed = (Date.now() - startTime) / 1000;
+        const averageSpeed = converted / elapsed;
+        
+        setStats((prev) => ({
+          ...prev,
+          converted,
+          failed,
+          averageSpeed,
+        }));
       }
 
+      const endTime = Date.now();
+      const converted = files.filter((f) => f.status === "ready").length;
+      const failed = files.filter((f) => f.status === "error").length;
+      const elapsed = (endTime - startTime) / 1000;
+      
+      setStats({
+        totalFiles: queuedFiles.length,
+        converted,
+        failed,
+        startTime,
+        endTime,
+        averageSpeed: converted / elapsed,
+      });
+
+      setShowReport(true);
+      
       toast({
         title: "Conversion complete!",
-        description: "All files have been converted to SVG",
+        description: `${converted} converted, ${failed} failed`,
       });
     } catch (error) {
       console.error("Batch conversion error:", error);
@@ -194,10 +268,13 @@ const Index = () => {
     try {
       const zip = new JSZip();
 
+      // Preserve folder structure if paths exist
       readyFiles.forEach((file) => {
         const fileName = file.file.name.replace(/\.(png|jpg|jpeg)$/i, ".svg");
+        const fullPath = file.path ? `${file.path}/${fileName}` : fileName;
+        
         if (file.svgBlob) {
-          zip.file(fileName, file.svgBlob);
+          zip.file(fullPath, file.svgBlob);
         }
       });
 
@@ -210,6 +287,16 @@ const Index = () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      // Auto-delete files from memory after download
+      setTimeout(() => {
+        files.forEach((file) => URL.revokeObjectURL(file.originalUrl));
+        setFiles([]);
+        toast({
+          title: "Files cleared",
+          description: "All files removed from memory for privacy",
+        });
+      }, 2000);
 
       toast({
         title: "Download started",
@@ -272,18 +359,23 @@ const Index = () => {
             Fastest Offline JPG/PNG to SVG Converter
           </p>
           <p className="text-sm text-muted-foreground">
-            Convert up to 200 images • WebAssembly-powered • No uploads • Lightning fast
+            Convert up to 500 images • WebAssembly-powered • No uploads • Lightning fast
           </p>
         </section>
 
         {/* Upload Zone */}
         <section className="mb-8 animate-in fade-in duration-700 delay-100">
-          <UploadZone onFilesAdded={handleFilesAdded} maxFiles={200} />
+          <UploadZone onFilesAdded={handleFilesAdded} maxFiles={500} />
         </section>
 
         {/* Conversion Options */}
         <section className="mb-8 animate-in fade-in duration-700 delay-200">
-          <ConversionOptions mode={mode} onModeChange={setMode} />
+          <ConversionOptions 
+            mode={mode} 
+            onModeChange={setMode}
+            settings={settings}
+            onSettingsChange={setSettings}
+          />
         </section>
 
         {/* File List */}
@@ -292,9 +384,12 @@ const Index = () => {
             <FileList
               files={files}
               isConverting={isConverting}
+              stats={stats}
+              showReport={showReport}
               onConvert={handleConvert}
               onDownloadAll={handleDownloadAll}
               onDownloadSingle={handleDownloadSingle}
+              onCloseReport={() => setShowReport(false)}
             />
           </section>
         )}
