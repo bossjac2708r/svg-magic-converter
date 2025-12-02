@@ -1,22 +1,30 @@
-import { Clock, CheckCircle2, AlertCircle, Loader2, Download, Zap } from "lucide-react";
+import { Clock, CheckCircle2, AlertCircle, Loader2, Download, Zap, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import type { UploadedFile } from "@/pages/Index";
+import { ConversionReport } from "./ConversionReport";
+import { GalleryPreview } from "./GalleryPreview";
+import type { UploadedFile, ConversionStats } from "@/pages/Index";
 
 interface FileListProps {
   files: UploadedFile[];
   isConverting: boolean;
+  stats: ConversionStats;
+  showReport: boolean;
   onConvert: () => void;
   onDownloadAll: () => void;
   onDownloadSingle: (file: UploadedFile) => void;
+  onCloseReport: () => void;
 }
 
 export const FileList = ({
   files,
   isConverting,
+  stats,
+  showReport,
   onConvert,
   onDownloadAll,
   onDownloadSingle,
+  onCloseReport,
 }: FileListProps) => {
   const getStatusIcon = (status: UploadedFile["status"]) => {
     switch (status) {
@@ -60,17 +68,44 @@ export const FileList = ({
   const queuedCount = files.filter((f) => f.status === "queued").length;
   const processingCount = files.filter((f) => f.status === "processing").length;
   const readyCount = files.filter((f) => f.status === "ready").length;
+  const errorCount = files.filter((f) => f.status === "error").length;
   const totalFiles = files.length;
   const progress = totalFiles > 0 ? (readyCount / totalFiles) * 100 : 0;
 
+  // Calculate ETA
+  const eta = stats.startTime && stats.averageSpeed > 0 && queuedCount > 0
+    ? (queuedCount / stats.averageSpeed).toFixed(0)
+    : null;
+
   return (
-    <div className="bg-card rounded-lg border border-border shadow-soft p-6">
+    <>
+      {/* Conversion Report */}
+      {showReport && (
+        <div className="mb-8 animate-in fade-in duration-500">
+          <ConversionReport stats={stats} onClose={onCloseReport} />
+        </div>
+      )}
+
+      {/* Gallery Preview */}
+      <GalleryPreview files={files} onDownload={onDownloadSingle} />
+
+      <div className="bg-card rounded-lg border border-border shadow-soft p-6">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold">Your Files</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {readyCount} ready • {processingCount} processing • {queuedCount} queued
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground mt-1">
+            <span>{readyCount} ready</span>
+            <span>•</span>
+            <span>{processingCount} processing</span>
+            <span>•</span>
+            <span>{queuedCount} queued</span>
+            {errorCount > 0 && (
+              <>
+                <span>•</span>
+                <span className="text-destructive">{errorCount} failed</span>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex gap-3">
           {queuedCount > 0 && (
@@ -106,13 +141,33 @@ export const FileList = ({
 
       {processingCount > 0 && (
         <div className="mb-6 bg-accent/30 p-4 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-medium">Overall Progress</span>
             <span className="text-sm text-muted-foreground">
               {readyCount} / {totalFiles} completed
             </span>
           </div>
-          <Progress value={progress} className="h-2" />
+          <Progress value={progress} className="h-2 mb-3" />
+          
+          {/* Real-time metrics */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            {stats.averageSpeed > 0 && (
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                <span className="text-muted-foreground">
+                  Speed: <span className="font-medium text-foreground">{stats.averageSpeed.toFixed(2)} img/s</span>
+                </span>
+              </div>
+            )}
+            {eta && (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-primary" />
+                <span className="text-muted-foreground">
+                  ETA: <span className="font-medium text-foreground">{eta}s</span>
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -185,6 +240,7 @@ export const FileList = ({
           </div>
         ))}
       </div>
-    </div>
+      </div>
+    </>
   );
 };
