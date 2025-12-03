@@ -41,6 +41,9 @@ All colors MUST be HSL.
     --success: 155 70% 45%;
     --success-foreground: 0 0% 100%;
 
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
     --gradient-primary: linear-gradient(135deg, hsl(270, 95%, 55%), hsl(280, 90%, 65%));
     --gradient-accent: linear-gradient(180deg, hsl(260, 20%, 98%), hsl(265, 30%, 96%));
     --shadow-soft: 0 4px 20px -4px hsl(270 95% 55% / 0.15);
@@ -80,6 +83,9 @@ All colors MUST be HSL.
 
     --success: 155 60% 45%;
     --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
 
     --gradient-primary: linear-gradient(135deg, hsl(270, 90%, 60%), hsl(280, 85%, 65%));
     --gradient-accent: linear-gradient(180deg, hsl(260, 90%, 10%), hsl(265, 80%, 12%));
