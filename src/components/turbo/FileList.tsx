@@ -3,12 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ConversionReport } from "./ConversionReport";
 import { GalleryPreview } from "./GalleryPreview";
-import type { UploadedFile, ConversionStats } from "@/pages/Index";
+import type { UploadedFile, GlobalStats } from "@/types/converter";
 
 interface FileListProps {
   files: UploadedFile[];
   isConverting: boolean;
-  stats: ConversionStats;
+  stats: GlobalStats;
   showReport: boolean;
   onConvert: () => void;
   onDownloadAll: () => void;

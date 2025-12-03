@@ -1,329 +1,195 @@
-import { useState } from "react";
-import { Zap, Moon, Sun } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Zap, Moon, Sun, Circle, Layers } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Header } from "@/components/turbo/Header";
-import { UploadZone } from "@/components/turbo/UploadZone";
-import { ConversionOptions } from "@/components/turbo/ConversionOptions";
-import { FileList } from "@/components/turbo/FileList";
+import { FolderUploadZone } from "@/components/turbo/FolderUploadZone";
+import { FolderCard } from "@/components/turbo/FolderCard";
+import { GlobalControls } from "@/components/turbo/GlobalControls";
+import { FinalReport } from "@/components/turbo/FinalReport";
 import { FAQSection } from "@/components/turbo/FAQSection";
 import { Footer } from "@/components/turbo/Footer";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { loadImageFromFile, imageToImageData } from "@/lib/imageTracer";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useConversionEngine } from "@/hooks/useConversionEngine";
 import JSZip from "jszip";
-
-export type ConversionMode = "blackwhite" | "posterize";
-export type FileStatus = "queued" | "processing" | "ready" | "error";
-
-export interface ConversionSettings {
-  smoothness: number;
-  noiseReduction: number;
-}
-
-export interface UploadedFile {
-  id: string;
-  file: File;
-  status: FileStatus;
-  originalUrl: string;
-  svgString?: string;
-  svgBlob?: Blob;
-  mode: ConversionMode;
-  error?: string;
-  path?: string; // Original folder path
-  conversionTime?: number; // Time taken to convert in ms
-}
-
-export interface ConversionStats {
-  totalFiles: number;
-  converted: number;
-  failed: number;
-  startTime: number | null;
-  endTime: number | null;
-  averageSpeed: number; // Images per second
-}
+import type { ConversionMode, ConversionSettings, DEFAULT_SETTINGS, MAX_FOLDERS } from "@/types/converter";
 
 const Index = () => {
-  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [mode, setMode] = useState<ConversionMode>("blackwhite");
   const [settings, setSettings] = useState<ConversionSettings>({
     smoothness: 1,
     noiseReduction: 1,
+    concurrency: 4,
+    downscaleEnabled: false,
+    downscaleMaxWidth: 1920,
   });
-  const [isConverting, setIsConverting] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  const [stats, setStats] = useState<ConversionStats>({
-    totalFiles: 0,
-    converted: 0,
-    failed: 0,
-    startTime: null,
-    endTime: null,
-    averageSpeed: 0,
-  });
+  
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
 
-  const handleFilesAdded = (newFiles: File[], folderPaths?: string[]) => {
-    const uploadedFiles: UploadedFile[] = newFiles.map((file, index) => ({
-      id: crypto.randomUUID(),
-      file,
-      status: "queued" as FileStatus,
-      originalUrl: URL.createObjectURL(file),
-      mode,
-      path: folderPaths?.[index],
-    }));
+  const {
+    folders,
+    isConverting,
+    isPaused,
+    globalStats,
+    addFolder,
+    clearFolder,
+    clearFolderByIndex,
+    retryFailed,
+    toggleFileSelection,
+    selectAllInFolder,
+    startAllConversions,
+    pauseResume,
+    cancelConversion,
+    clearAllAfterDownload,
+  } = useConversionEngine({ settings, mode });
 
-    setFiles((prev) => [...prev, ...uploadedFiles]);
+  const handleStartAll = useCallback(async () => {
+    if (folders.length === 0) {
+      toast({
+        title: "No folders",
+        description: "Please add at least one folder",
+        variant: "destructive",
+      });
+      return;
+    }
+    await startAllConversions();
+    setShowReport(true);
     toast({
-      title: "Files added",
-      description: `${newFiles.length} file(s) ready for conversion`,
+      title: "Conversion complete!",
+      description: `${globalStats.converted} converted, ${globalStats.failed} failed`,
     });
-  };
+  }, [folders.length, startAllConversions, globalStats, toast]);
 
-  const convertFile = async (uploadedFile: UploadedFile) => {
-    const startTime = Date.now();
-    try {
-      // Update status to processing
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === uploadedFile.id ? { ...f, status: "processing" as FileStatus } : f
-        )
-      );
+  const handleDownloadFolder = useCallback(async (folderId: string) => {
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
 
-      // Load and convert image
-      const img = await loadImageFromFile(uploadedFile.file);
-      const imageData = imageToImageData(img);
-
-      // Create worker for conversion
-      const worker = new Worker(
-        new URL("../lib/conversionWorker.ts", import.meta.url),
-        { type: "module" }
-      );
-
-      return new Promise<void>((resolve, reject) => {
-        worker.onmessage = (e) => {
-          if (e.data.type === "success") {
-            const svgBlob = new Blob([e.data.svgString], { type: "image/svg+xml" });
-            const conversionTime = Date.now() - startTime;
-            
-            setFiles((prev) =>
-              prev.map((f) =>
-                f.id === uploadedFile.id
-                  ? {
-                      ...f,
-                      status: "ready" as FileStatus,
-                      svgString: e.data.svgString,
-                      svgBlob,
-                      conversionTime,
-                    }
-                  : f
-              )
-            );
-            worker.terminate();
-            resolve();
-          } else if (e.data.type === "error") {
-            setFiles((prev) =>
-              prev.map((f) =>
-                f.id === uploadedFile.id
-                  ? {
-                      ...f,
-                      status: "error" as FileStatus,
-                      error: e.data.error,
-                    }
-                  : f
-              )
-            );
-            worker.terminate();
-            reject(new Error(e.data.error));
-          }
-        };
-
-        worker.onerror = (error) => {
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.id === uploadedFile.id
-                ? { ...f, status: "error" as FileStatus, error: error.message }
-                : f
-            )
-          );
-          worker.terminate();
-          reject(error);
-        };
-
-        worker.postMessage({
-          type: "convert",
-          imageData,
-          mode: uploadedFile.mode,
-          settings,
-          fileId: uploadedFile.id,
-          fileName: uploadedFile.file.name,
-        });
-      });
-    } catch (error) {
-      console.error("Conversion error:", error);
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === uploadedFile.id
-            ? {
-                ...f,
-                status: "error" as FileStatus,
-                error: error instanceof Error ? error.message : "Unknown error",
-              }
-            : f
-        )
-      );
-      throw error;
-    }
-  };
-
-  const handleConvert = async () => {
-    if (files.length === 0) {
-      toast({
-        title: "No files",
-        description: "Please upload files first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsConverting(true);
-    const startTime = Date.now();
-    
-    // Initialize stats
-    const queuedFiles = files.filter((f) => f.status === "queued");
-    setStats({
-      totalFiles: queuedFiles.length,
-      converted: 0,
-      failed: 0,
-      startTime,
-      endTime: null,
-      averageSpeed: 0,
-    });
-
-    try {
-      // Process files in parallel batches of 6
-      const batchSize = 6;
-      
-      for (let i = 0; i < queuedFiles.length; i += batchSize) {
-        const batch = queuedFiles.slice(i, i + batchSize);
-        const results = await Promise.allSettled(batch.map((file) => convertFile(file)));
-        
-        // Update stats after each batch
-        const converted = files.filter((f) => f.status === "ready").length;
-        const failed = files.filter((f) => f.status === "error").length;
-        const elapsed = (Date.now() - startTime) / 1000;
-        const averageSpeed = converted / elapsed;
-        
-        setStats((prev) => ({
-          ...prev,
-          converted,
-          failed,
-          averageSpeed,
-        }));
-      }
-
-      const endTime = Date.now();
-      const converted = files.filter((f) => f.status === "ready").length;
-      const failed = files.filter((f) => f.status === "error").length;
-      const elapsed = (endTime - startTime) / 1000;
-      
-      setStats({
-        totalFiles: queuedFiles.length,
-        converted,
-        failed,
-        startTime,
-        endTime,
-        averageSpeed: converted / elapsed,
-      });
-
-      setShowReport(true);
-      
-      toast({
-        title: "Conversion complete!",
-        description: `${converted} converted, ${failed} failed`,
-      });
-    } catch (error) {
-      console.error("Batch conversion error:", error);
-      toast({
-        title: "Some conversions failed",
-        description: "Check the file list for details",
-        variant: "destructive",
-      });
-    } finally {
-      setIsConverting(false);
-    }
-  };
-
-  const handleDownloadAll = async () => {
-    const readyFiles = files.filter((f) => f.status === "ready" && f.svgBlob);
-
+    const readyFiles = folder.files.filter((f) => f.status === "ready" && f.svgBlob);
     if (readyFiles.length === 0) {
-      toast({
-        title: "No files ready",
-        description: "Convert some files first",
-        variant: "destructive",
-      });
+      toast({ title: "No files ready", variant: "destructive" });
       return;
     }
 
-    try {
-      const zip = new JSZip();
+    const zip = new JSZip();
+    readyFiles.forEach((file) => {
+      const fileName = file.file.name.replace(/\.(png|jpg|jpeg)$/i, ".svg");
+      if (file.svgBlob) zip.file(fileName, file.svgBlob);
+    });
 
-      // Preserve folder structure if paths exist
-      readyFiles.forEach((file) => {
-        const fileName = file.file.name.replace(/\.(png|jpg|jpeg)$/i, ".svg");
-        const fullPath = file.path ? `${file.path}/${fileName}` : fileName;
-        
-        if (file.svgBlob) {
-          zip.file(fullPath, file.svgBlob);
-        }
-      });
-
-      const blob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "svg-conversions.zip";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Auto-delete files from memory after download
-      setTimeout(() => {
-        files.forEach((file) => URL.revokeObjectURL(file.originalUrl));
-        setFiles([]);
-        toast({
-          title: "Files cleared",
-          description: "All files removed from memory for privacy",
-        });
-      }, 2000);
-
-      toast({
-        title: "Download started",
-        description: `${readyFiles.length} files in ZIP`,
-      });
-    } catch (error) {
-      console.error("ZIP creation error:", error);
-      toast({
-        title: "Download failed",
-        description: "Error creating ZIP file",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleDownloadSingle = (file: UploadedFile) => {
-    if (!file.svgBlob) return;
-
-    const url = URL.createObjectURL(file.svgBlob);
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = file.file.name.replace(/\.(png|jpg|jpeg)$/i, ".svg");
+    a.download = `${folder.name}-svg.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+
+    toast({ title: "Download started", description: `${readyFiles.length} files in ZIP` });
+  }, [folders, toast]);
+
+  const handleDownloadSelected = useCallback(async (folderId: string) => {
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+
+    const selectedFiles = folder.files.filter((f) => f.selected && f.status === "ready" && f.svgBlob);
+    if (selectedFiles.length === 0) {
+      toast({ title: "No files selected", variant: "destructive" });
+      return;
+    }
+
+    const zip = new JSZip();
+    selectedFiles.forEach((file) => {
+      const fileName = file.file.name.replace(/\.(png|jpg|jpeg)$/i, ".svg");
+      if (file.svgBlob) zip.file(fileName, file.svgBlob);
+    });
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${folder.name}-selected.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast({ title: "Download started", description: `${selectedFiles.length} selected files` });
+  }, [folders, toast]);
+
+  const handleDownloadAllFolders = useCallback(async () => {
+    const allReadyFiles = folders.flatMap((folder) =>
+      folder.files
+        .filter((f) => f.status === "ready" && f.svgBlob)
+        .map((f) => ({ ...f, folderName: folder.name }))
+    );
+
+    if (allReadyFiles.length === 0) {
+      toast({ title: "No files ready", variant: "destructive" });
+      return;
+    }
+
+    const zip = new JSZip();
+    allReadyFiles.forEach((file) => {
+      const fileName = file.file.name.replace(/\.(png|jpg|jpeg)$/i, ".svg");
+      const fullPath = `${file.folderName}/${fileName}`;
+      if (file.svgBlob) zip.file(fullPath, file.svgBlob);
+    });
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "all-folders-svg.zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Auto-clear after download
+    setTimeout(() => {
+      clearAllAfterDownload();
+      toast({
+        title: "Files cleared",
+        description: "All files removed from memory for privacy",
+      });
+    }, 2000);
+
+    toast({ title: "Download started", description: `${allReadyFiles.length} files from all folders` });
+  }, [folders, clearAllAfterDownload, toast]);
+
+  const handleStartPause = useCallback(() => {
+    if (!isConverting) {
+      handleStartAll();
+    } else {
+      pauseResume();
+    }
+  }, [isConverting, handleStartAll, pauseResume]);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onStartPause: handleStartPause,
+    onCancel: cancelConversion,
+    onDownload: handleDownloadAllFolders,
+    enabled: folders.length > 0,
+  });
+
+  const totalReadyFiles = folders.reduce(
+    (acc, f) => acc + f.files.filter((fl) => fl.status === "ready").length,
+    0
+  );
+  const totalQueuedFiles = folders.reduce(
+    (acc, f) => acc + f.files.filter((fl) => fl.status === "queued").length,
+    0
+  );
+  const canStart = totalQueuedFiles > 0 && !isConverting;
 
   return (
     <div className="min-h-screen bg-gradient-accent">
@@ -337,65 +203,132 @@ const Index = () => {
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="rounded-full shadow-medium"
         >
-          {theme === "dark" ? (
-            <Sun className="h-5 w-5" />
-          ) : (
-            <Moon className="h-5 w-5" />
-          )}
+          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
       </div>
 
-      <main className="container mx-auto px-4 py-8 max-w-6xl">
+      <main className="container mx-auto px-4 py-8 max-w-7xl">
         {/* Hero Section */}
-        <section className="text-center mb-12 animate-in fade-in duration-700">
+        <section className="text-center mb-8 animate-in fade-in duration-700">
           <div className="inline-flex items-center gap-2 mb-4 px-4 py-2 bg-primary/10 rounded-full border border-primary/20">
             <Zap className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium text-primary">100% Offline Processing</span>
+            <span className="text-sm font-medium text-primary">100% Offline • 3 Folders • 360 Images</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold mb-4 bg-gradient-primary bg-clip-text text-transparent">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-primary bg-clip-text text-transparent">
             SVG Turbo Converter
           </h1>
-          <p className="text-xl text-muted-foreground mb-2">
-            Fastest Offline JPG/PNG to SVG Converter
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Convert up to 500 images • WebAssembly-powered • No uploads • Lightning fast
+          <p className="text-lg text-muted-foreground">
+            Ultra-fast folder-aware batch conversion • WebAssembly-powered
           </p>
         </section>
 
-        {/* Upload Zone */}
+        {/* Conversion Mode Selection */}
         <section className="mb-8 animate-in fade-in duration-700 delay-100">
-          <UploadZone onFilesAdded={handleFilesAdded} maxFiles={500} />
+          <Card className="p-6 shadow-soft border-border bg-card">
+            <h2 className="text-lg font-semibold mb-4">Conversion Mode</h2>
+            <RadioGroup
+              value={mode}
+              onValueChange={(v) => setMode(v as ConversionMode)}
+              className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+            >
+              <label
+                htmlFor="blackwhite"
+                className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                  mode === "blackwhite" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                }`}
+              >
+                <RadioGroupItem value="blackwhite" id="blackwhite" />
+                <Circle className="h-5 w-5 text-primary" />
+                <div>
+                  <Label htmlFor="blackwhite" className="font-semibold cursor-pointer">Black & White</Label>
+                  <p className="text-xs text-muted-foreground">2-color tracing, fastest</p>
+                </div>
+              </label>
+              <label
+                htmlFor="posterize"
+                className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                  mode === "posterize" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                }`}
+              >
+                <RadioGroupItem value="posterize" id="posterize" />
+                <Layers className="h-5 w-5 text-primary" />
+                <div>
+                  <Label htmlFor="posterize" className="font-semibold cursor-pointer">Posterize (4 Colors)</Label>
+                  <p className="text-xs text-muted-foreground">More detail, richer output</p>
+                </div>
+              </label>
+            </RadioGroup>
+          </Card>
         </section>
 
-        {/* Conversion Options */}
+        {/* 3-Column Folder Upload */}
         <section className="mb-8 animate-in fade-in duration-700 delay-200">
-          <ConversionOptions 
-            mode={mode} 
-            onModeChange={setMode}
-            settings={settings}
-            onSettingsChange={setSettings}
-          />
+          <h2 className="text-lg font-semibold mb-4">Upload Folders (Max 3)</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[0, 1, 2].map((index) => (
+              <FolderUploadZone
+                key={index}
+                folderIndex={index}
+                folderName={folders[index]?.name}
+                fileCount={folders[index]?.files.length || 0}
+                onFolderAdded={addFolder}
+                onClearFolder={clearFolderByIndex}
+                disabled={isConverting}
+              />
+            ))}
+          </div>
         </section>
 
-        {/* File List */}
-        {files.length > 0 && (
+        {/* Global Controls */}
+        {folders.length > 0 && (
           <section className="mb-8 animate-in fade-in duration-700 delay-300">
-            <FileList
-              files={files}
+            <GlobalControls
+              stats={globalStats}
+              settings={settings}
+              onSettingsChange={setSettings}
               isConverting={isConverting}
-              stats={stats}
-              showReport={showReport}
-              onConvert={handleConvert}
-              onDownloadAll={handleDownloadAll}
-              onDownloadSingle={handleDownloadSingle}
-              onCloseReport={() => setShowReport(false)}
+              isPaused={isPaused}
+              canStart={canStart}
+              onStartAll={handleStartAll}
+              onPauseResume={pauseResume}
+              onCancel={cancelConversion}
+              onDownloadAllFolders={handleDownloadAllFolders}
+              readyCount={totalReadyFiles}
             />
           </section>
         )}
 
+        {/* Final Report */}
+        {showReport && globalStats.endTime && (
+          <section className="mb-8 animate-in fade-in duration-500">
+            <FinalReport stats={globalStats} onClose={() => setShowReport(false)} />
+          </section>
+        )}
+
+        {/* Folder Cards - 3 Column Layout */}
+        {folders.length > 0 && (
+          <section className="mb-8 animate-in fade-in duration-700 delay-400">
+            <h2 className="text-lg font-semibold mb-4">Processing Status</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {folders.map((folder) => (
+                <FolderCard
+                  key={folder.id}
+                  folder={folder}
+                  onDownloadAll={handleDownloadFolder}
+                  onDownloadSelected={handleDownloadSelected}
+                  onClearFolder={clearFolder}
+                  onRetryFailed={retryFailed}
+                  onToggleFileSelection={toggleFileSelection}
+                  onSelectAll={selectAllInFolder}
+                  disabled={isConverting}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* FAQ Section */}
-        <section className="mb-8 animate-in fade-in duration-700 delay-400">
+        <section className="mb-8 animate-in fade-in duration-700 delay-500">
           <FAQSection />
         </section>
       </main>

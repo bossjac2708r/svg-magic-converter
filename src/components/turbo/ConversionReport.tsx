@@ -1,7 +1,10 @@
 import { CheckCircle2, XCircle, Zap, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import type { ConversionStats } from "@/pages/Index";
+import type { GlobalStats } from "@/types/converter";
+
+// Use GlobalStats instead of ConversionStats for consistency
+type ConversionStats = GlobalStats;
 
 interface ConversionReportProps {
   stats: ConversionStats;

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { X, ZoomIn, Download, ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import type { UploadedFile } from "@/pages/Index";
+import type { UploadedFile } from "@/types/converter";
 
 interface GalleryPreviewProps {
   files: UploadedFile[];

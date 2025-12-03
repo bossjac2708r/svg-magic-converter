@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Slider } from "@/components/ui/slider";
-import type { ConversionMode, ConversionSettings } from "@/pages/Index";
+import type { ConversionMode, ConversionSettings } from "@/types/converter";
 
 interface ConversionOptionsProps {
   mode: ConversionMode;
