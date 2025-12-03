@@ -1,4 +1,4 @@
-import { Zap } from "lucide-react";
+import { Zap, Folder } from "lucide-react";
 
 export const Header = () => {
   return (
